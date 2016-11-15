@@ -9,9 +9,9 @@ import numpy
 import os
 import sys
 
-version = "0.1.0"
+import scandata
 
-parser = argparse.ArgumentParser(prog="PySDRScan", version=version,
+parser = argparse.ArgumentParser(prog="PySDRScan", version=scandata.program_version,
         description="Use librtl-supported SDR devices to scan wide spectrum data over time")
 parser.add_argument("startfreq", help="Starting frequency in MHz", type=float)
 parser.add_argument("endfreq", help="Ending frequency in MHz", type=float)
@@ -21,63 +21,68 @@ parser.add_argument("-p", "--passes",
         type=int)
 parser.add_argument("-o", "--output-file",
         help="Output file name for FITS data (defaults to start date and time)",
-        default=strftime("%Y-%m-%d %H:%M:%S.fits"),
+        default=strftime("%Y-%m-%dT%H:%M:%S.fits"),
         type=str)
 parser.add_argument("--clobber",
-        help="Automatically overwrite existing output file",
+        help="Automatically overwrite any existing output files",
+        action='store_true',
+        default=False)
+parser.add_argument("--silent",
+        help="Do not report the status of the scanning phase",
         action='store_true',
         default=False)
 argv = parser.parse_args()
 
 clobber = argv.clobber
 
-out = fits.HDUList()
-out.append(fits.PrimaryHDU())
-out[0].header["PSSVER"] = (version, "PySDRScan version")
+# Create new generic header
+header = {
+        'version': scandata.program_version,
+        'startdate': strftime("%Y-%m-%dT%H:%M:%S"),
+        'startfreq': argv.startfreq * 1e6,
+        'endfreq': argv.endfreq * 1e6,
+        'passes': argv.passes
+        }
 
-starting_freq = argv.startfreq * 1e6
-out[0].header["FRQ_STRT"] = (starting_freq, "Start frequency (Hz)")
-print("\nStarting frequency: %f MHz" % (starting_freq/1e6))
-
-ending_freq = argv.endfreq * 1e6
-if ending_freq < starting_freq:
-    print("Ending frequency must be greater or equal to starting frequency.")
+# Perform sanity check on the arguments
+if header['endfreq'] < header['startfreq']:
+    print("Ending frequency must be greater than or equal to starting frequency.")
     sys.exit()
-out[0].header["FRQ_END"] = (ending_freq, "End frequency (Hz)")
-print("Ending frequency: %f MHz" % (ending_freq/1e6))
-
-num_passes = argv.passes
-if num_passes < 1:
+if header['passes'] < 1:
     print("Number of passes cannot be less than one.")
     sys.exit()
-out[0].header["PASSES"] = (num_passes, "Full passes")
-print("Number of passes: %d\n" % num_passes)
 
+print("\nStarting frequency: %f MHz" % (header['startfreq']/1e6))
+print("Ending frequency: %f MHz" % (header['endfreq']/1e6))
+print("Number of passes: %d\n" % header['passes'])
 print("Will write to output file '%s'" % argv.output_file)
 
 # Initialize SDR
 sdr = RtlSdr()
 sdr.set_gain(200)
-out[0].header["GAIN"] = (sdr.get_gain(), "SDR Gain")
+header['gain'] = sdr.get_gain()
 print("Using a gain of %f" % sdr.get_gain())
 
 # TODO: properly set the sampling rate and number of samples to read
 sdr.sample_rate *= 2
-sdr.set_center_freq(starting_freq)
-out[0].header["BANDWD"] = (sdr.sample_rate, "Bandwidth (Hz)")
+header['bandwidth'] = sdr.sample_rate
+sdr.set_center_freq(header['startfreq'])
 print("Device bandwidth: %f MHz" % ((sdr.sample_rate)/1e6))
 
 fft_size = 2048
-num_windows = int(math.ceil((ending_freq - starting_freq)/(sdr.get_sample_rate())))
-print("Will sample %d windows per pass\n" % num_windows)
+num_windows = int(math.ceil((header['endfreq'] - header['startfreq'])/(sdr.get_sample_rate())))
+print("Sampling %d windows per %d passes\n" % (num_windows, header['passes']))
 
-data = numpy.zeros(shape=(num_passes, num_windows, fft_size), dtype=numpy.float64)
+data = numpy.zeros(shape=(header['passes'], num_windows, fft_size), dtype=numpy.float64)
 
-for i in range(0, num_passes):
-    freq = starting_freq
-    print("\nBeginning pass %d of %d\n" % (i+1, num_passes))
+for i in range(0, header['passes']):
+    freq = header['startfreq']
+    if not argv.silent:
+        print("\nBeginning pass %d of %d\n" % (i+1, header['passes']))
     for j in range(0, num_windows):
-        print("Scanning at %f MHz..." % (freq/1e6))
+        if not argv.silent:
+            print("Scanning window %d of %d at %f MHz..." %
+                    (j+1, num_windows, (freq/1e6)))
 
         # TODO: normalize, average over time, and allow for custom fft info
         samples = sdr.read_samples(fft_size)
@@ -88,12 +93,17 @@ for i in range(0, num_passes):
         freq += sdr.get_sample_rate()
         sdr.set_center_freq(freq)
 
-# Collapse array of FFT data into one broad spectrum
-data = data.reshape((num_passes, -1))
+header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
 
+# Collapse array of FFT data into one broad spectrum
+data = data.reshape((header['passes'], -1))
+
+out = fits.HDUList()
+out.append(fits.PrimaryHDU())
 out.append(fits.ImageHDU())
 out[1].data = data
 
+# Check if output file already exists
 if os.path.isfile(argv.output_file) and clobber == False:
     choice = ""
     while choice != ('y' or 'n'):
@@ -106,7 +116,10 @@ if os.path.isfile(argv.output_file) and clobber == False:
             print("Abandoning all captured data (TODO: salvage)")
             sys.exit()
 
+out[0].header.update(scandata.toFitsHeaderDict(header))
 out.writeto(argv.output_file, clobber=clobber)
 
 out.close()
+
+print("File '%s' written successfully" % argv.output_file)
 
