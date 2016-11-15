@@ -13,6 +13,8 @@ def toFitsHeaderDict(header):
         return {
                 "PROG": (program_name),
                 "VERSION": (header['version']),
+                "STRTDATE": (header['startdate']),
+                "ENDDATE": (header['enddate']),
                 "FRQ_STRT": (header['startfreq'], "Start frequency (Hz)"),
                 "FRQ_END": (header['endfreq'], "End frequency (Hz)"),
                 "PASSES": (header['passes'], "Full spectrum passes"),
@@ -20,5 +22,5 @@ def toFitsHeaderDict(header):
                 "GAIN": (header['gain'], "SDR Gain")
                 }
     else:
-        raise KeyError
+        raise KeyError("Required keys not found to construct a full header.")
 
