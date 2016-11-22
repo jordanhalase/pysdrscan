@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from astropy.io import fits
+from astropy import wcs
 from rtlsdr import RtlSdr
 from time import strftime
 import argparse
@@ -34,6 +35,13 @@ def saveFits(header, data, clobber):
                 print("Abandoning all captured data")
                 sys.exit()
 
+    # TODO: Finish WCS
+    coords = wcs.WCS(naxis=2)
+    pixcoords = numpy.array([[2048,0], [2.048, 0]], numpy.float_)
+    world = coords.wcs_pix2world(pixcoords, 1)
+    print(world)
+
+    print("Writing to file '%s'..." % argv.output_file)
     out[0].header.update(scandata.toFitsHeaderDict(header))
     out.writeto(argv.output_file, clobber=clobber)
     out.close()
@@ -116,21 +124,24 @@ print("Press Ctrl+C to cancel scanning and save")
 
 for i in range(0, header['passes']):
     freq = header['startfreq']
+
     if not argv.silent:
         print("\nBeginning pass %d of %d\n" % (i+1, header['passes']))
+
     for j in range(0, num_windows):
+        sdr.set_center_freq(freq)
+
         if not argv.silent:
             print("Scanning window %d of %d at %f MHz..." %
                     (j+1, num_windows, (freq/1e6)))
 
         # TODO: normalize, average over time, and allow for custom fft info
         samples = sdr.read_samples(fft_size)
-        spectrum = numpy.absolute(numpy.fft.fft(samples))
+        spectrum = numpy.abs(numpy.fft.fft(samples))**2
 
         data[i][j] = spectrum
 
         freq += sdr.get_sample_rate()
-        sdr.set_center_freq(freq)
 
 header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
 saveFits(header, data, clobber)
