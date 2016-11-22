@@ -7,32 +7,68 @@ import argparse
 import math
 import numpy
 import os
+import signal
 import sys
 
 import scandata
 
-parser = argparse.ArgumentParser(prog="PySDRScan", version=scandata.program_version,
-        description="Use librtl-supported SDR devices to scan wide spectrum data over time")
-parser.add_argument("startfreq", help="Starting frequency in MHz", type=float)
-parser.add_argument("endfreq", help="Ending frequency in MHz", type=float)
-parser.add_argument("-p", "--passes",
-        help="Number of full spectrum passes",
-        default=1,
-        type=int)
-parser.add_argument("-o", "--output-file",
-        help="Output file name for FITS data (defaults to start date and time)",
-        default=strftime("%Y-%m-%dT%H:%M:%S.fits"),
-        type=str)
-parser.add_argument("--clobber",
-        help="Automatically overwrite any existing output files",
-        action='store_true',
-        default=False)
-parser.add_argument("--silent",
-        help="Do not report the status of the scanning phase",
-        action='store_true',
-        default=False)
-argv = parser.parse_args()
+def saveFits(header, data, clobber):
+    # Collapse array of FFT data into one broad spectrum
+    data = data.reshape((header['passes'], -1))
 
+    out = fits.HDUList()
+    out.append(fits.PrimaryHDU())
+    out.append(fits.ImageHDU())
+    out[1].data = data
+
+    # Check if output file already exists
+    if os.path.isfile(argv.output_file) and clobber == False:
+        choice = ""
+        while choice != ('y' or 'n'):
+            print("File '%s' already exists. Overwrite? [y/N]:" % argv.output_file),
+            choice = raw_input().lower()
+            if choice == 'y':
+                print("Overwriting")
+                clobber = True
+            elif choice == 'n':
+                print("Abandoning all captured data")
+                sys.exit()
+
+    out[0].header.update(scandata.toFitsHeaderDict(header))
+    out.writeto(argv.output_file, clobber=clobber)
+    out.close()
+    print("File '%s' written successfully" % argv.output_file)
+
+def terminate(signal, frame):
+    print "\nCaught SIGINT. Salvaging data."
+    header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
+    saveFits(header, data, clobber)
+    sys.exit(0)
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(prog="PySDRScan", version=scandata.program_version,
+            description="Use librtl-supported SDR devices to scan wide spectrum data over time")
+    parser.add_argument("startfreq", help="Starting frequency in MHz", type=float)
+    parser.add_argument("endfreq", help="Ending frequency in MHz", type=float)
+    parser.add_argument("-p", "--passes",
+            help="Number of full spectrum passes",
+            default=1,
+            type=int)
+    parser.add_argument("-o", "--output-file",
+            help="Output file name for FITS data (defaults to start date and time)",
+            default=strftime("%Y-%m-%dT%H:%M:%S.fits"),
+            type=str)
+    parser.add_argument("--clobber",
+            help="Automatically overwrite any existing output files",
+            action='store_true',
+            default=False)
+    parser.add_argument("--silent",
+            help="Do not report the status of the scanning phase",
+            action='store_true',
+            default=False)
+    return parser.parse_args()
+
+argv = parse_arguments()
 clobber = argv.clobber
 
 # Create new generic header
@@ -75,6 +111,9 @@ print("Sampling %d windows per %d passes\n" % (num_windows, header['passes']))
 
 data = numpy.zeros(shape=(header['passes'], num_windows, fft_size), dtype=numpy.float64)
 
+signal.signal(signal.SIGINT, terminate)
+print("Press Ctrl+C to cancel scanning and save")
+
 for i in range(0, header['passes']):
     freq = header['startfreq']
     if not argv.silent:
@@ -94,32 +133,5 @@ for i in range(0, header['passes']):
         sdr.set_center_freq(freq)
 
 header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
-
-# Collapse array of FFT data into one broad spectrum
-data = data.reshape((header['passes'], -1))
-
-out = fits.HDUList()
-out.append(fits.PrimaryHDU())
-out.append(fits.ImageHDU())
-out[1].data = data
-
-# Check if output file already exists
-if os.path.isfile(argv.output_file) and clobber == False:
-    choice = ""
-    while choice != ('y' or 'n'):
-        print("File '%s' already exists. Overwrite? [y/N]:" % argv.output_file),
-        choice = raw_input().lower()
-        if choice == 'y':
-            print("Overwriting")
-            clobber = True
-        elif choice == 'n':
-            print("Abandoning all captured data (TODO: salvage)")
-            sys.exit()
-
-out[0].header.update(scandata.toFitsHeaderDict(header))
-out.writeto(argv.output_file, clobber=clobber)
-
-out.close()
-
-print("File '%s' written successfully" % argv.output_file)
+saveFits(header, data, clobber)
 
