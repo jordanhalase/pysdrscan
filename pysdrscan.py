@@ -17,10 +17,10 @@ def saveFits(header, data, clobber):
     # Collapse array of FFT data into one broad spectrum
     data = data.reshape((header['passes'], -1))
 
-    out = fits.HDUList()
-    out.append(fits.PrimaryHDU())
-    out.append(fits.ImageHDU())
-    out[1].data = data
+    hdulist = fits.HDUList()
+    hdulist.append(fits.PrimaryHDU())
+    hdulist.append(fits.ImageHDU())
+    hdulist[1].data = data
 
     # Check if output file already exists
     if os.path.isfile(argv.output_file) and clobber == False:
@@ -42,9 +42,9 @@ def saveFits(header, data, clobber):
     print(world)
 
     print("Writing to file '%s'..." % argv.output_file)
-    out[0].header.update(scandata.toFitsHeaderDict(header))
-    out.writeto(argv.output_file, clobber=clobber)
-    out.close()
+    hdulist[0].header.update(scandata.toFitsHeaderDict(header))
+    hdulist.writeto(argv.output_file, clobber=clobber)
+    hdulist.close()
     print("File '%s' written successfully" % argv.output_file)
 
 def terminate(signal, frame):
