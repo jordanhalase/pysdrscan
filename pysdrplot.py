@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from astropy.io import fits
+from astropy import wcs
 from matplotlib import pyplot
 import argparse
 import pylab
@@ -12,6 +13,9 @@ parser.add_argument("aspect", help="Aspect", type=float)
 argv = parser.parse_args()
 
 hdulist = fits.open(argv.file)
-plot = pylab.imshow(hdulist[1].data, aspect=argv.aspect)
+w = wcs.WCS(hdulist[0].header)
+
+figure = pyplot.figure()
+pylab.imshow(hdulist[1].data, aspect=argv.aspect)
 pyplot.show()
 

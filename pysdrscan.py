@@ -36,13 +36,15 @@ def saveFits(header, data, clobber):
                 sys.exit()
 
     # TODO: Finish WCS
-    coords = wcs.WCS(naxis=2)
-    pixcoords = numpy.array([[2048,0], [2.048, 0]], numpy.float_)
-    world = coords.wcs_pix2world(pixcoords, 1)
-    print(world)
+    w = wcs.WCS(naxis=2)
+    w.wcs.crpix = [0, 0]
+    w.wcs.crval = [header['startfreq'], 0]
+    w.wcs.cdelt = [header['bandwidth'], 1]
+    w.wcs.ctype = ['Hz', '']
 
     print("Writing to file '%s'..." % argv.output_file)
     hdulist[0].header.update(scandata.toFitsHeaderDict(header))
+    hdulist[0].header.update(w.to_header())
     hdulist.writeto(argv.output_file, clobber=clobber)
     hdulist.close()
     print("File '%s' written successfully" % argv.output_file)
