@@ -39,8 +39,9 @@ def saveFits(header, data, clobber):
     w = wcs.WCS(naxis=2)
     w.wcs.crpix = [0, 0]
     w.wcs.crval = [header['startfreq'], 0]
-    w.wcs.cdelt = [header['bandwidth'], 1]
-    w.wcs.ctype = ['Hz', '']
+    w.wcs.cdelt = [header['bandwidth']/fft_size, 1]
+    w.wcs.ctype = ['FREQ', '']
+    w.wcs.cunit = ['Hz', '']
 
     print("Writing to file '%s'..." % argv.output_file)
     hdulist[0].header.update(scandata.toFitsHeaderDict(header))
