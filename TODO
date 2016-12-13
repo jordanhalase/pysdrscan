@@ -2,3 +2,4 @@
 * Properly set sampling rate; not just 2x default rate
 * FFT size per window should be adjustable; not hardcoded to 2048
 * Perform moving average over each window over user defined time interval
+* Display approximate end time for the scan/pass/window
