@@ -3,7 +3,7 @@
 from astropy.io import fits
 from astropy.wcs import WCS
 from matplotlib.colors import LogNorm
-from matplotlib import pyplot
+import matplotlib.pyplot as plt
 import argparse
 
 parser = argparse.ArgumentParser(prog="PySDRPlot",
@@ -14,14 +14,14 @@ argv = parser.parse_args()
 hdu = fits.open(argv.file)
 wcs = WCS(hdu[0].header)
 
-figure = pyplot.figure()
+figure = plt.figure()
 figure.add_subplot(111, projection=wcs)
-pyplot.imshow(hdu[1].data,
+plt.imshow(hdu[1].data,
         origin='lower',
         aspect='auto',
         norm=LogNorm())
-        # cmap='PuBu_r')
-pyplot.xlabel('Frequency')
-pyplot.ylabel('Passes')
-pyplot.show()
+# cmap='PuBu_r')
+plt.xlabel('Frequency')
+plt.ylabel('Passes')
+plt.show()
 

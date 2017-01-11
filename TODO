@@ -1,4 +1,1 @@
-* Set gain of the SDR to a proper value; not just default to 200
-* Properly set sampling rate; not just 2x default rate
-* FFT size per window should be adjustable; not hardcoded to 2048
-* Perform moving average over each window over user defined time interval
+* Add color intensity indicator to pysdrplot

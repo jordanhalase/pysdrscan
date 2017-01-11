@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 program_name = "PySDRScan by Jordan Halase"
-program_version = "0.1.2"
+program_version = "0.1.3"
 
 attributes = {
     'version', 'startdate', 'enddate', 'startfreq',

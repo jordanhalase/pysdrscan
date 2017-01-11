@@ -4,16 +4,15 @@ from astropy.io import fits
 from astropy import wcs
 from rtlsdr import RtlSdr
 from time import strftime
+import numpy as np
 import argparse
-import math
-import numpy
 import os
 import signal
 import sys
 
 import scandata
 
-def saveFits(header, data, clobber):
+def save_fits(header, data, clobber):
     # Collapse array of FFT data into one broad spectrum
     data = data.reshape((header['passes'], -1))
 
@@ -39,7 +38,7 @@ def saveFits(header, data, clobber):
     w = wcs.WCS(naxis=2)
     w.wcs.crpix = [0, 0]
     w.wcs.crval = [header['startfreq'], 0]
-    w.wcs.cdelt = [header['bandwidth']/fft_size, 1]
+    w.wcs.cdelt = [header['bandwidth']/argv.fft_size, 1]
     w.wcs.ctype = ['FREQ', '']
     w.wcs.cunit = ['Hz', '']
 
@@ -53,17 +52,36 @@ def saveFits(header, data, clobber):
 def terminate(signal, frame):
     print "\nCaught SIGINT. Salvaging data."
     header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
-    saveFits(header, data, clobber)
+    save_fits(header, data, clobber)
     sys.exit(0)
+
+def secs_to_windows(secs, fft_size, sample_rate):
+    return int(np.floor(sample_rate * secs / fft_size))
 
 def parse_arguments():
     parser = argparse.ArgumentParser(prog="PySDRScan", version=scandata.program_version,
             description="Use librtl-supported SDR devices to scan wide spectrum data over time")
     parser.add_argument("startfreq", help="Starting frequency in MHz", type=float)
     parser.add_argument("endfreq", help="Ending frequency in MHz", type=float)
+    parser.add_argument("-fs", "--sample_rate",
+            help="SDR sampling rate in Hz (negative for default)",
+            default=-1,
+            type=int)
     parser.add_argument("-p", "--passes",
             help="Number of full spectrum passes",
             default=1,
+            type=int)
+    parser.add_argument("-g", "--gain",
+            help="SDR device gain (negative for auto)",
+            default=-1,
+            type=int)
+    parser.add_argument("-t", "--time-per-window",
+            help="Time in seconds to average per window",
+            default=0,
+            type=int)
+    parser.add_argument("-fft", "--fft-size",
+            help="FFT size per window",
+            default=256,
             type=int)
     parser.add_argument("-o", "--output-file",
             help="Output file name for FITS data (defaults to start date and time)",
@@ -73,10 +91,10 @@ def parse_arguments():
             help="Automatically overwrite any existing output files",
             action='store_true',
             default=False)
-    parser.add_argument("--silent",
+    parser.add_argument("--silence",
             help="Do not report the status of the scanning phase",
-            action='store_true',
-            default=False)
+            choices=['none', 'windows', 'passes', 'all'],
+            default='none')
     return parser.parse_args()
 
 argv = parse_arguments()
@@ -106,46 +124,61 @@ print("Will write to output file '%s'" % argv.output_file)
 
 # Initialize SDR
 sdr = RtlSdr()
-sdr.set_gain(200)
-header['gain'] = sdr.get_gain()
-print("Using a gain of %f" % sdr.get_gain())
+if argv.gain < 0:
+    sdr.set_gain('auto')
+    header['gain'] = 'auto'
+    print("Using an automatic gain")
+else:
+    sdr.set_gain(argv.gain)
+    header['gain'] = sdr.get_gain()
+    print("Using a gain of %f" % sdr.get_gain())
 
-# TODO: properly set the sampling rate and number of samples to read
-sdr.sample_rate *= 2
+if argv.sample_rate > 0:
+    sdr.set_sample_rate(argv.sample_rate)
 header['bandwidth'] = sdr.sample_rate
 sdr.set_center_freq(header['startfreq'])
 print("Device bandwidth: %f MHz" % ((sdr.sample_rate)/1e6))
 
-fft_size = 2048
-num_windows = int(math.ceil((header['endfreq'] - header['startfreq'])/(sdr.get_sample_rate())))
+# fft_size = 2048
+num_windows = int(np.ceil((header['endfreq'] - header['startfreq'])/(sdr.get_sample_rate())))
 print("Sampling %d windows per %d passes\n" % (num_windows, header['passes']))
 
-data = numpy.zeros(shape=(header['passes'], num_windows, fft_size), dtype=numpy.float64)
+data = np.zeros(shape=(header['passes'], num_windows, argv.fft_size), dtype=np.float64)
+buf = np.zeros(argv.fft_size, dtype=np.float64)
 
 signal.signal(signal.SIGINT, terminate)
 print("Press Ctrl+C to cancel scanning and save")
 
+# A 'primer' pass may need to be done
+for i in range(0, 8):
+    sdr.read_samples(argv.fft_size)
+
+windows = secs_to_windows(argv.time_per_window, argv.fft_size, sdr.sample_rate)
+
 for i in range(0, header['passes']):
     freq = header['startfreq']
 
-    if not argv.silent:
+    if argv.silence != 'passes' and argv.silence != 'all':
         print("\nBeginning pass %d of %d\n" % (i+1, header['passes']))
 
     for j in range(0, num_windows):
         sdr.set_center_freq(freq)
 
-        if not argv.silent:
+        if argv.silence != 'windows' and argv.silence != 'all':
             print("Scanning window %d of %d at %f MHz..." %
                     (j+1, num_windows, (freq/1e6)))
 
-        # TODO: normalize, average over time, and allow for custom fft info
-        samples = sdr.read_samples(fft_size)
-        spectrum = numpy.abs(numpy.fft.fft(samples))**2
-
+        samples = sdr.read_samples(argv.fft_size)
+        spectrum = np.abs(np.fft.fft(samples))**2.0
         data[i][j] = spectrum
+
+        for k in range(1, windows):
+            samples = sdr.read_samples(argv.fft_size)
+            spectrum = np.abs(np.fft.fft(samples))**2.0
+            data[i][j] = (data[i][j] + spectrum)/2.0
 
         freq += sdr.get_sample_rate()
 
 header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
-saveFits(header, data, clobber)
+save_fits(header, data, clobber)
 
