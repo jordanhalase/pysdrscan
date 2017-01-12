@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 program_name = "PySDRScan by Jordan Halase"
-program_version = "0.1.3"
+program_version = "0.1.4"
 
 attributes = {
     'version', 'startdate', 'enddate', 'startfreq',
@@ -18,8 +18,11 @@ def toFitsHeaderDict(header):
                 "FRQ_STRT": (header['startfreq'], "Start frequency (Hz)"),
                 "FRQ_END": (header['endfreq'], "End frequency (Hz)"),
                 "PASSES": (header['passes'], "Full spectrum passes"),
-                "BNDWDTH": (header['bandwidth'], "Window bandwidth (Hz)"),
-                "GAIN": (header['gain'], "SDR Gain")
+                "BNDWDTH": (header['bandwidth'], "Segment bandwidth (Hz)"),
+                "GAIN": (header['gain'], "SDR Gain"),
+                "FFTSIZE": (header['fftsize'], "FFT Size"),
+                "SEGAVG": (header['segavg'], "Segments to average"),
+                "WINFUNC": (header['winfunc'], "FFT window function")
                 }
     else:
         raise KeyError("Required keys not found to construct a full header.")
