@@ -1,2 +1,3 @@
 * Double check if samples are complex valued or not
 * Display approximate end time for the scan/pass/window
+* Add setup script

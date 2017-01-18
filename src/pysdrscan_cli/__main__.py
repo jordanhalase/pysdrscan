@@ -1,53 +1,13 @@
 #!/usr/bin/python
 
-from astropy.io import fits
-from astropy import wcs
-from rtlsdr import RtlSdr
-from time import strftime
-import numpy as np
 import argparse
 import os
 import signal
 import sys
-
-import scandata
-
-def save_fits(header, data, overwrite):
-    # Collapse array of FFT data into one broad spectrum
-    data = data.reshape((header['passes'], -1))
-
-    hdulist = fits.HDUList()
-    hdulist.append(fits.PrimaryHDU())
-    hdulist.append(fits.ImageHDU())
-    hdulist[1].data = data
-
-    # Check if output file already exists
-    if os.path.isfile(argv.output_file) and overwrite == False:
-        choice = ""
-        while choice != ('y' or 'n'):
-            print("File '%s' already exists. Overwrite? [y/N]:" % argv.output_file),
-            choice = raw_input().lower()
-            if choice == 'y':
-                print("Overwriting")
-                overwrite = True
-            elif choice == 'n':
-                print("Abandoning all captured data")
-                sys.exit()
-
-    # TODO: Finish WCS
-    w = wcs.WCS(naxis=2)
-    w.wcs.crpix = [0, 0]
-    w.wcs.crval = [header['startfreq'] - header['bandwidth']/2.0, 0]
-    w.wcs.cdelt = [header['bandwidth']/argv.fft_size, 1]
-    w.wcs.ctype = ['FREQ', '']
-    w.wcs.cunit = ['Hz', '']
-
-    print("Writing to file '%s'..." % argv.output_file)
-    hdulist[0].header.update(scandata.toFitsHeaderDict(header))
-    hdulist[0].header.update(w.to_header())
-    hdulist.writeto(argv.output_file, overwrite=overwrite)
-    hdulist.close()
-    print("File '%s' written successfully" % argv.output_file)
+import numpy as np
+from time import strftime
+from rtlsdr import RtlSdr
+import pysdrscan
 
 def terminate(signal, frame):
     print "\nCaught SIGINT. Salvaging data."
@@ -55,11 +15,9 @@ def terminate(signal, frame):
     save_fits(header, data, argv.overwrite)
     sys.exit(0)
 
-def secs_to_segments(secs, fft_size, sample_rate):
-    return int(np.floor(sample_rate * secs / fft_size))
-
 def parse_arguments():
-    parser = argparse.ArgumentParser(prog="PySDRScan", version=scandata.program_version,
+    parser = argparse.ArgumentParser(prog=pysdrscan.__title__,
+            version=pysdrscan.__version__,
             description="Use librtl-supported SDR devices to scan wide spectrum data over time")
     parser.add_argument("startfreq",
             help="Starting center frequency in MHz", type=float)
@@ -87,7 +45,8 @@ def parse_arguments():
             type=int)
     parser.add_argument("-w", "--window",
             help="Window function for FFT",
-            choices=['rectangular', 'hanning', 'hamming', 'bartlett', 'blackman', 'kaiser'],
+            choices=['rectangular', 'hanning', 'hamming',
+                'bartlett', 'blackman', 'kaiser'],
             default='hanning',
             type=str)
     parser.add_argument("-o", "--output-file",
@@ -108,7 +67,7 @@ argv = parse_arguments()
 
 # Create new generic header
 header = {
-        'version': scandata.program_version,
+        'version': pysdrscan.__version__,
         'startdate': strftime("%Y-%m-%dT%H:%M:%S"),
         'startfreq': argv.startfreq*1e6,
         'endfreq': argv.endfreq*1e6,
@@ -168,7 +127,9 @@ print("Press Ctrl+C to cancel scanning and save")
 for i in range(0, 8):
     sdr.read_samples(argv.fft_size)
 
-segments = secs_to_segments(argv.time_per_segment, argv.fft_size, sdr.sample_rate)
+segments = pysdrscan.util.secs_to_segments(argv.time_per_segment,
+        argv.fft_size,
+        sdr.sample_rate)
 header['segavg'] = segments
 
 for i in range(0, header['passes']):
@@ -202,5 +163,7 @@ for i in range(0, header['passes']):
         freq += sdr.get_sample_rate()
 
 header['enddate'] = strftime("%Y-%m-%dT%H:%M:%S")
-save_fits(header, data, argv.overwrite)
+print("Writing to file '%s'..." % argv.output_file)
+pysdrscan.io.save_fits(argv.output_file, header, data, argv.overwrite)
+print("File '%s' written successfully" % argv.output_file)
 

@@ -1,17 +1,16 @@
 #!/usr/bin/python
 
-program_name = "PySDRScan by Jordan Halase"
-program_version = "0.1.4"
+from __init__ import __title__
 
 attributes = {
     'version', 'startdate', 'enddate', 'startfreq',
     'endfreq', 'passes', 'bandwidth', 'gain'
     }
 
-def toFitsHeaderDict(header):
+def to_fits_header_dict(header):
     if attributes.issubset(header.keys()):
         return {
-                "PROG": (program_name),
+                "PROG": (__title__),
                 "VERSION": (header['version']),
                 "STRTDATE": (header['startdate']),
                 "ENDDATE": (header['enddate']),
